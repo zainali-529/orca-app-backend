@@ -4,9 +4,10 @@ const cors = require('cors');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 
-const authRoutes = require('./routes/auth.routes');
+const authRoutes    = require('./routes/auth.routes');
 const profileRoutes = require('./routes/profile.routes');
-const { sendError } = require('./utils/response');
+const tariffRoutes  = require('./routes/tariff.routes');
+const { sendError }  = require('./utils/response');
 
 const app = express();
 
@@ -62,8 +63,9 @@ app.get('/health', (req, res) => {
 });
 
 // ── API Routes ─────────────────────────────────────────────
-app.use('/api/auth',  authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
+app.use('/api/tariffs', tariffRoutes);
 
 // ── 404 handler ────────────────────────────────────────────
 app.use((req, res) => {

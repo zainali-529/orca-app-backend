@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "seed": "node src/data/tariffs.seed.js",
+    "sync": "node -e \"require('./src/jobs/tariff.sync').runSync({source:'all'}).then(r=>console.log(JSON.stringify(r.summary,null,2))).catch(console.error)\""
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -18,7 +20,9 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.4.0",
     "morgan": "^1.10.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "node-cron": "^3.0.3",
+    "ioredis": "^5.3.2"
   },
   "devDependencies": {
     "jest": "^29.7.0",

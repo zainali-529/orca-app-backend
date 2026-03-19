@@ -9,6 +9,23 @@ const startServer = async () => {
   // Connect to MongoDB first
   await connectDB();
 
+  // Connect to Redis (optional — graceful if not configured)
+  const cache = require('./config/redis');
+  await cache.connect();
+
+  // Start tariff sync scheduler + run initial sync
+  const tariffSync = require('./jobs/tariff.sync');
+  tariffSync.startScheduler();
+
+  // Run initial sync on startup (background — don't block server start)
+  if (process.env.NODE_ENV !== 'test') {
+    setTimeout(() => {
+      console.log('[Startup] Running initial tariff sync...');
+      tariffSync.runSync({ source: 'all' })
+        .catch(err => console.error('[Startup] Initial sync error:', err.message));
+    }, 3000); // 3s delay after server starts
+  }
+
   const server = app.listen(PORT, () => {
     console.log(`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
