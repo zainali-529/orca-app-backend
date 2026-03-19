@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const authRoutes    = require('./routes/auth.routes');
 const profileRoutes = require('./routes/profile.routes');
 const tariffRoutes  = require('./routes/tariff.routes');
+const quoteRoutes   = require('./routes/quote.routes');
 const { sendError }  = require('./utils/response');
 
 const app = express();
@@ -66,6 +67,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/tariffs', tariffRoutes);
+app.use('/api/quotes',  quoteRoutes);
 
 // ── 404 handler ────────────────────────────────────────────
 app.use((req, res) => {
