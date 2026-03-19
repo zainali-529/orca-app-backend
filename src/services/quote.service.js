@@ -1,149 +1,144 @@
 /**
- * Quote Service
+ * Quote Service — Client Side
  *
- * Handles:
- *   - Creating quotes (with tariff snapshot)
- *   - Listing broker's quotes
- *   - Getting a single quote
- *   - Updating quote status
- *   - Generating PDF + uploading to Cloudinary
- *   - Deleting quotes (and their PDFs)
+ * Client requests a quote → admin contacts them.
+ * Profile data auto-fills the request snapshot.
  */
 
 const Quote       = require('../models/Quote');
 const Tariff      = require('../models/Tariff');
 const UserProfile = require('../models/UserProfile');
 const User        = require('../models/User');
-const { generateQuotePdf } = require('./pdf.service');
-const cloudinaryConfig     = require('../config/cloudinary');
 
-// ── Helpers ────────────────────────────────────────────────────
-
-/**
- * Build a tariff snapshot from a Tariff DB document.
- * The snapshot is stored on the Quote so rate drift doesn't affect it.
- */
-const buildTariffSnapshot = (tariff) => ({
-  tariffId:    tariff._id,
-  supplier:    tariff.supplier,
-  tariffName:  tariff.tariffName,
-  tariffCode:  tariff.tariffCode,
-  fuelType:    tariff.fuelType,
-  tariffType:  tariff.tariffType,
-  isGreen:     tariff.isGreen,
-  electricity: tariff.electricity,
-  gas:         tariff.gas,
-  contractLengthMonths: tariff.contractLengthMonths,
-  exitFee:     tariff.exitFee,
-  cashback:    tariff.cashback,
-  features:    tariff.features,
-  isLive:      tariff.source === 'octopus',
-  dataLabel:   tariff.source === 'octopus' ? 'Live rate' : 'Ofgem cap rate',
-});
-
-/**
- * Calculate pricing from tariff rates + usage.
- * Returns the full pricing object for the Quote.
- */
-const buildPricing = ({
-  tariff,
-  annualElectricityKwh,
-  annualGasKwh,
-  currentSupplierAnnualCost,
-}) => {
-  const elecKwh = annualElectricityKwh ?? null;
-  const gasKwh  = annualGasKwh         ?? null;
-
-  const calcAnnual = (unitRate, standingCharge, kwh) => {
-    if (!unitRate || !kwh) return null;
-    const sc = standingCharge ?? 0;
-    return Math.round(((unitRate / 100) * kwh) + ((sc / 100) * 365));
-  };
-
-  const electricityAnnualCost = calcAnnual(
-    tariff.electricity?.unitRate,
-    tariff.electricity?.standingCharge,
-    elecKwh
-  );
-
-  const gasAnnualCost = calcAnnual(
-    tariff.gas?.unitRate,
-    tariff.gas?.standingCharge,
-    gasKwh
-  );
-
-  const totalAnnualCost = (electricityAnnualCost ?? 0) + (gasAnnualCost ?? 0) || 0;
-  const monthlyAverage  = totalAnnualCost ? Math.round(totalAnnualCost / 12) : null;
-  const weeklyAverage   = totalAnnualCost ? Math.round(totalAnnualCost / 52) : null;
-
-  // Savings vs current supplier
-  const annualSaving  = currentSupplierAnnualCost
-    ? currentSupplierAnnualCost - totalAnnualCost
-    : null;
-  const monthlySaving = annualSaving ? Math.round(annualSaving / 12) : null;
-
+// ── Build energy snapshot from profile ────────────────────────
+const buildEnergySnapshot = (profile) => {
+  if (!profile) return {};
   return {
-    annualElectricityKwh: elecKwh,
-    annualGasKwh:         gasKwh,
-    electricityAnnualCost,
-    gasAnnualCost,
-    totalAnnualCost,
-    monthlyAverage,
-    weeklyAverage,
-    currentSupplierAnnualCost: currentSupplierAnnualCost ?? null,
-    annualSaving,
-    monthlySaving,
-    vatIncluded: true,
+    businessType: profile.businessType ?? null,
+    companyName:  profile.companyName  ?? null,
+    postcode:     profile.billingAddress?.postcode ?? null,
+    city:         profile.billingAddress?.city     ?? null,
+    mpan:         profile.energy?.mpan  ?? null,
+    mprn:         profile.energy?.mprn  ?? null,
+    currentElectricitySupplier: profile.energy?.currentElectricitySupplier ?? null,
+    currentGasSupplier:         profile.energy?.currentGasSupplier         ?? null,
+    annualElectricityKwh:       profile.energy?.annualElectricityKwh       ?? null,
+    annualGasKwh:               profile.energy?.annualGasKwh               ?? null,
+    electricityTariffType:      profile.energy?.electricityTariffType      ?? null,
+    gasTariffType:              profile.energy?.gasTariffType              ?? null,
+    hasSmartMeter:              profile.energy?.hasSmartMeter              ?? false,
   };
 };
 
-// ── Service Methods ────────────────────────────────────────────
+// ── Build contact details from user + profile ─────────────────
+const buildContactDetails = (user, profile) => ({
+  name:  `${user.firstName} ${user.lastName}`,
+  email: user.email,
+  phone: user.phone ?? profile?.businessPhone ?? null,
+  preferredContactMethod: profile?.contactPreference ?? 'phone',
+  bestTimeToContact: null,
+});
+
+// ── Build interested tariff snapshot ──────────────────────────
+const buildTariffSnapshot = (tariff, estimatedCost, estimatedSaving) => ({
+  tariffId:              tariff._id,
+  supplier:              tariff.supplier,
+  tariffName:            tariff.tariffName,
+  fuelType:              tariff.fuelType,
+  tariffType:            tariff.tariffType,
+  isGreen:               tariff.isGreen,
+  estimatedAnnualCost:   estimatedCost   ?? null,
+  estimatedAnnualSaving: estimatedSaving ?? null,
+});
+
+// ── Calculate cost estimate ────────────────────────────────────
+const calcAnnual = (unitRate, standingCharge, kwh) => {
+  if (!unitRate || !kwh) return null;
+  return Math.round(((unitRate / 100) * kwh) + (((standingCharge ?? 0) / 100) * 365));
+};
+
+const estimateCost = (tariff, elecKwh, gasKwh) => {
+  const elec = calcAnnual(tariff.electricity?.unitRate, tariff.electricity?.standingCharge, elecKwh);
+  const gas  = calcAnnual(tariff.gas?.unitRate,         tariff.gas?.standingCharge,         gasKwh);
+  return (elec ?? 0) + (gas ?? 0) || null;
+};
+
+// ─────────────────────────────────────────────────────────────
+// SERVICE METHODS
+// ─────────────────────────────────────────────────────────────
 
 /**
  * POST /api/quotes
- * Create a new quote (starts as draft).
+ * Client requests a quote.
+ * Auto-fills energy snapshot + contact details from profile.
  */
-const createQuote = async (brokerId, data) => {
+const createQuoteRequest = async (clientId, data) => {
   const {
-    client,
     tariffId,
     annualElectricityKwh,
     annualGasKwh,
     currentSupplierAnnualCost,
-    notes,
-    validDays,
+    preferences,
+    contactDetails,
+    message,
   } = data;
 
-  // Fetch tariff from DB
-  const tariff = await Tariff.findById(tariffId);
-  if (!tariff) {
-    const err = new Error('Tariff not found');
-    err.statusCode = 404;
-    throw err;
+  // Load client profile + user
+  const [user, profile] = await Promise.all([
+    User.findById(clientId),
+    UserProfile.findOne({ user: clientId }),
+  ]);
+
+  // ── Energy snapshot from profile (override with request data if provided) ──
+  const snapshot = buildEnergySnapshot(profile);
+  if (annualElectricityKwh) snapshot.annualElectricityKwh = annualElectricityKwh;
+  if (annualGasKwh)         snapshot.annualGasKwh         = annualGasKwh;
+
+  // ── Contact details from profile (override with request data if provided) ──
+  const contact = buildContactDetails(user, profile);
+  if (contactDetails) {
+    Object.assign(contact, contactDetails);
+    // Ensure name is always set
+    if (!contact.name || contact.name.trim() === '') {
+      contact.name = `${user.firstName} ${user.lastName}`;
+    }
   }
 
-  if (!tariff.isActive) {
-    const err = new Error('This tariff is no longer active');
-    err.statusCode = 400;
-    throw err;
-  }
+  // ── Preferences from profile + request ────────────────────────
+  const prefs = {
+    fuelType:       preferences?.fuelType      ?? null,
+    preferGreen:    preferences?.preferGreen   ?? profile?.preferGreenEnergy ?? false,
+    preferFixed:    preferences?.preferFixed   ?? profile?.preferFixedTariff ?? true,
+    contractLength: preferences?.contractLength ?? 'no_preference',
+  };
 
-  // Build snapshot + pricing
-  const tariffSnapshot = buildTariffSnapshot(tariff);
-  const pricing = buildPricing({
-    tariff,
-    annualElectricityKwh,
-    annualGasKwh,
-    currentSupplierAnnualCost,
-  });
+  // ── Interested tariff (if client clicked "Request Quote" on a specific tariff) ──
+  let interestedTariff = {};
+  if (tariffId) {
+    const tariff = await Tariff.findById(tariffId);
+    if (!tariff) {
+      const err = new Error('Tariff not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const elecKwh = snapshot.annualElectricityKwh;
+    const gasKwh  = snapshot.annualGasKwh;
+    const estimatedCost   = estimateCost(tariff, elecKwh, gasKwh);
+    const estimatedSaving = currentSupplierAnnualCost && estimatedCost
+      ? currentSupplierAnnualCost - estimatedCost
+      : null;
+
+    interestedTariff = buildTariffSnapshot(tariff, estimatedCost, estimatedSaving);
+  }
 
   const quote = await Quote.create({
-    broker:   brokerId,
-    client,
-    tariff:   tariffSnapshot,
-    pricing,
-    notes:    notes ?? null,
-    validDays: validDays ?? 30,
+    client:           clientId,
+    interestedTariff,
+    energySnapshot:   snapshot,
+    preferences:      prefs,
+    contactDetails:   contact,
+    message:          message ?? null,
   });
 
   return quote;
@@ -151,28 +146,22 @@ const createQuote = async (brokerId, data) => {
 
 /**
  * GET /api/quotes
- * List all quotes for the authenticated broker.
- * Supports filters: status, page, limit
+ * Client sees their own quote requests.
+ * adminNotes field is stripped — clients don't see internal notes.
  */
-const getMyQuotes = async (brokerId, query) => {
-  const {
-    status,
-    page  = 1,
-    limit = 20,
-    sortBy = 'createdAt',
-    order  = 'desc',
-  } = query;
+const getMyQuotes = async (clientId, query) => {
+  const { status, page = 1, limit = 20 } = query;
 
-  const filter = { broker: brokerId };
+  const filter = { client: clientId };
   if (status) filter.status = status;
 
-  const sortDir  = order === 'asc' ? 1 : -1;
-  const skip     = (page - 1) * limit;
-  const total    = await Quote.countDocuments(filter);
+  const skip  = (page - 1) * limit;
+  const total = await Quote.countDocuments(filter);
 
   const quotes = await Quote
     .find(filter)
-    .sort({ [sortBy]: sortDir })
+    .select('-adminNotes') // never expose to client
+    .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit)
     .lean({ virtuals: true });
@@ -192,115 +181,65 @@ const getMyQuotes = async (brokerId, query) => {
 
 /**
  * GET /api/quotes/:id
- * Get a single quote (must belong to broker).
+ * Client gets a single quote request (their own only).
  */
-const getQuoteById = async (brokerId, quoteId) => {
-  const quote = await Quote.findOne({ _id: quoteId, broker: brokerId }).lean({ virtuals: true });
+const getQuoteById = async (clientId, quoteId) => {
+  const quote = await Quote
+    .findOne({ _id: quoteId, client: clientId })
+    .select('-adminNotes')
+    .lean({ virtuals: true });
   return quote;
 };
 
 /**
  * PATCH /api/quotes/:id
- * Update mutable quote fields (notes, client info, status).
- * Cannot update tariff or pricing after creation.
+ * Client can: update message, contact details, or cancel.
+ * Cannot change status except to 'cancelled'.
+ * Cannot modify after it's been contacted/completed.
  */
-const updateQuote = async (brokerId, quoteId, updates) => {
-  const quote = await Quote.findOne({ _id: quoteId, broker: brokerId });
+const updateQuoteRequest = async (clientId, quoteId, updates) => {
+  const quote = await Quote.findOne({ _id: quoteId, client: clientId });
   if (!quote) return null;
 
-  const { notes, status, client, validDays } = updates;
-
-  if (notes     !== undefined) quote.notes    = notes;
-  if (validDays !== undefined) {
-    quote.validDays  = validDays;
-    const d = new Date();
-    d.setDate(d.getDate() + validDays);
-    quote.validUntil = d;
-  }
-  if (client    !== undefined) {
-    // Allow partial client updates
-    Object.assign(quote.client, client);
+  // Can only edit pending requests
+  if (!['pending'].includes(quote.status) && updates.status !== 'cancelled') {
+    const err = new Error('This quote request can no longer be edited');
+    err.statusCode = 400;
+    throw err;
   }
 
-  // Status transitions
-  if (status && status !== quote.status) {
-    const allowed = {
-      draft:    ['sent'],
-      sent:     ['accepted', 'rejected', 'expired'],
-      accepted: [],
-      rejected: ['sent'], // can re-send
-      expired:  ['sent'],
-    };
-    if (!(allowed[quote.status] ?? []).includes(status)) {
-      const err = new Error(`Cannot transition from '${quote.status}' to '${status}'`);
+  if (updates.message     !== undefined) quote.message = updates.message;
+  if (updates.contactDetails) {
+    Object.assign(quote.contactDetails, updates.contactDetails);
+  }
+
+  // Client can cancel their own request
+  if (updates.status === 'cancelled') {
+    if (quote.status === 'completed') {
+      const err = new Error('Cannot cancel a completed request');
       err.statusCode = 400;
       throw err;
     }
-
-    quote.status = status;
-    if (status === 'sent')     quote.sentAt     = new Date();
-    if (status === 'accepted') quote.acceptedAt = new Date();
-    if (status === 'rejected') quote.rejectedAt = new Date();
+    quote.status      = 'cancelled';
+    quote.cancelledAt = new Date();
   }
 
   await quote.save();
-  return quote;
-};
-
-/**
- * POST /api/quotes/:id/pdf
- * Generate a PDF and upload to Cloudinary.
- * Returns the updated quote with pdfUrl.
- */
-const generateAndUploadPdf = async (brokerId, quoteId) => {
-  const quote = await Quote.findOne({ _id: quoteId, broker: brokerId });
-  if (!quote) return null;
-
-  // Fetch broker profile + user for PDF header
-  const [brokerProfile, brokerUser] = await Promise.all([
-    UserProfile.findOne({ user: brokerId }),
-    User.findById(brokerId),
-  ]);
-
-  // Generate PDF buffer
-  const pdfBuffer = await generateQuotePdf(quote, brokerProfile, brokerUser);
-
-  // Upload to Cloudinary
-  const uploaded = await cloudinaryConfig.uploadPdf(pdfBuffer, quote.quoteNumber);
-
-  if (uploaded) {
-    // Delete old PDF from Cloudinary if exists
-    if (quote.pdf?.publicId && quote.pdf.publicId !== uploaded.publicId) {
-      await cloudinaryConfig.deletePdf(quote.pdf.publicId);
-    }
-
-    quote.pdf = {
-      url:         uploaded.url,
-      publicId:    uploaded.publicId,
-      generatedAt: new Date(),
-    };
-    await quote.save();
-  } else {
-    // Cloudinary not configured — return PDF as buffer in response metadata
-    // The controller will handle streaming it directly
-    quote._pdfBuffer = pdfBuffer;
-    quote.pdf.generatedAt = new Date();
-  }
-
-  return { quote, pdfBuffer };
+  return quote.toObject({ virtuals: true });
 };
 
 /**
  * DELETE /api/quotes/:id
- * Delete a quote + its PDF from Cloudinary.
+ * Client can only delete their own PENDING requests.
  */
-const deleteQuote = async (brokerId, quoteId) => {
-  const quote = await Quote.findOne({ _id: quoteId, broker: brokerId });
+const deleteQuoteRequest = async (clientId, quoteId) => {
+  const quote = await Quote.findOne({ _id: quoteId, client: clientId });
   if (!quote) return null;
 
-  // Delete PDF from Cloudinary
-  if (quote.pdf?.publicId) {
-    await cloudinaryConfig.deletePdf(quote.pdf.publicId);
+  if (quote.status !== 'pending') {
+    const err = new Error('Only pending requests can be deleted. Use cancel instead.');
+    err.statusCode = 400;
+    throw err;
   }
 
   await Quote.deleteOne({ _id: quoteId });
@@ -308,42 +247,28 @@ const deleteQuote = async (brokerId, quoteId) => {
 };
 
 /**
- * GET /api/quotes/stats
- * Quick stats for dashboard.
+ * GET /api/quotes/summary
+ * Quick count of the client's quote requests by status.
  */
-const getQuoteStats = async (brokerId) => {
-  const stats = await Quote.aggregate([
-    { $match: { broker: brokerId } },
-    {
-      $group: {
-        _id:   '$status',
-        count: { $sum: 1 },
-        totalSavings: { $sum: '$pricing.annualSaving' },
-      },
-    },
+const getQuoteSummary = async (clientId) => {
+  const counts = await Quote.aggregate([
+    { $match: { client: clientId } },
+    { $group: { _id: '$status', count: { $sum: 1 } } },
   ]);
 
-  const result = { draft: 0, sent: 0, accepted: 0, rejected: 0, expired: 0, totalSavingsGenerated: 0 };
-  for (const s of stats) {
-    result[s._id]  = s.count;
-    if (s._id === 'accepted') {
-      result.totalSavingsGenerated = Math.round(s.totalSavings ?? 0);
-    }
+  const summary = { pending: 0, contacted: 0, completed: 0, cancelled: 0, total: 0 };
+  for (const c of counts) {
+    summary[c._id] = c.count;
+    summary.total += c.count;
   }
-
-  result.total = Object.values(result)
-    .filter((v, i, arr) => i < arr.length - 2) // exclude totalSavings and total
-    .reduce((a, b) => (typeof b === 'number' ? a + b : a), 0);
-
-  return result;
+  return summary;
 };
 
 module.exports = {
-  createQuote,
+  createQuoteRequest,
   getMyQuotes,
   getQuoteById,
-  updateQuote,
-  generateAndUploadPdf,
-  deleteQuote,
-  getQuoteStats,
+  updateQuoteRequest,
+  deleteQuoteRequest,
+  getQuoteSummary,
 };

@@ -1,77 +1,63 @@
 const { z } = require('zod');
 
-// ── Client schema (inline — before CRM module in Week 3) ───────
-const clientSchema = z.object({
-  name:    z.string().trim().min(1, 'Client name is required'),
-  company: z.string().trim().optional().nullable(),
-  email:   z.string().trim().email('Invalid email').optional().nullable(),
-  phone:   z.string().trim().optional().nullable(),
-  address: z.object({
-    line1:    z.string().trim().optional().nullable(),
-    line2:    z.string().trim().optional().nullable(),
-    city:     z.string().trim().optional().nullable(),
-    postcode: z.string().trim().optional().nullable(),
-  }).optional(),
-  mpan: z.string().trim().optional().nullable(),
-  mprn: z.string().trim().optional().nullable(),
-});
+/**
+ * Quote Request Validators
+ * Client submits a quote request — most data auto-filled from profile
+ */
 
-// ── POST /api/quotes — create quote ───────────────────────────
+// ── POST /api/quotes ── Create quote request ──────────────────
 const createQuoteSchema = z.object({
-  // Client
-  client: clientSchema,
 
-  // Tariff
-  tariffId: z.string().trim().min(1, 'Tariff ID is required'),
+  // Tariff they saw (optional — can be general enquiry)
+  tariffId: z.string().trim().optional().nullable(),
 
-  // Usage
-  annualElectricityKwh: z
-    .number({ invalid_type_error: 'Must be a number' })
-    .positive()
-    .optional()
-    .nullable(),
-  annualGasKwh: z
-    .number()
-    .positive()
-    .optional()
-    .nullable(),
+  // Usage — pre-filled from profile, client can override
+  annualElectricityKwh: z.number().positive().optional().nullable(),
+  annualGasKwh:         z.number().positive().optional().nullable(),
 
-  // Current supplier cost (for savings calculation)
-  currentSupplierAnnualCost: z
-    .number()
-    .positive()
-    .optional()
-    .nullable(),
+  // Current costs (for savings estimate)
+  currentSupplierAnnualCost: z.number().positive().optional().nullable(),
 
-  // Quote metadata
-  notes:     z.string().trim().max(2000).optional().nullable(),
-  validDays: z.coerce.number().int().min(1).max(365).default(30),
-});
-
-// ── PATCH /api/quotes/:id — update quote ──────────────────────
-const updateQuoteSchema = z.object({
-  client: z.object({
-    name:    z.string().trim().min(1).optional(),
-    company: z.string().trim().optional().nullable(),
-    email:   z.string().trim().email().optional().nullable(),
-    phone:   z.string().trim().optional().nullable(),
-    mpan:    z.string().trim().optional().nullable(),
-    mprn:    z.string().trim().optional().nullable(),
+  // Preferences
+  preferences: z.object({
+    fuelType:       z.enum(['electricity', 'gas', 'dual']).optional().nullable(),
+    preferGreen:    z.boolean().optional(),
+    preferFixed:    z.boolean().optional(),
+    contractLength: z.enum(['no_preference', 'short', 'long']).optional(),
   }).optional(),
 
-  notes:     z.string().trim().max(2000).optional().nullable(),
-  validDays: z.coerce.number().int().min(1).max(365).optional(),
+  // Contact — pre-filled from profile, can override for this request
+  contactDetails: z.object({
+    name:                    z.string().trim().min(1, 'Name is required').optional(),
+    email:                   z.string().trim().email().optional().nullable(),
+    phone:                   z.string().trim().optional().nullable(),
+    preferredContactMethod:  z.enum(['email', 'phone', 'whatsapp']).optional(),
+    bestTimeToContact:       z.string().trim().max(100).optional().nullable(),
+  }).optional(),
 
-  status: z.enum(['sent', 'accepted', 'rejected', 'expired']).optional(),
-}).strict(); // no extra fields
+  // Any message from client
+  message: z.string().trim().max(1000).optional().nullable(),
+});
+
+// ── PATCH /api/quotes/:id ── Client can only cancel or update message ──
+const updateQuoteSchema = z.object({
+  message: z.string().trim().max(1000).optional().nullable(),
+
+  contactDetails: z.object({
+    phone:                  z.string().trim().optional().nullable(),
+    preferredContactMethod: z.enum(['email', 'phone', 'whatsapp']).optional(),
+    bestTimeToContact:      z.string().trim().max(100).optional().nullable(),
+  }).optional(),
+
+  // Client can only cancel their own request
+  status: z.enum(['cancelled']).optional(),
+}).strict();
 
 // ── GET /api/quotes — list filters ────────────────────────────
 const listQuotesSchema = z.object({
-  status:  z.enum(['draft', 'sent', 'accepted', 'rejected', 'expired']).optional(),
-  page:    z.coerce.number().int().min(1).default(1),
-  limit:   z.coerce.number().int().min(1).max(50).default(20),
-  sortBy:  z.enum(['createdAt', 'updatedAt', 'status', 'quoteNumber']).default('createdAt'),
-  order:   z.enum(['asc', 'desc']).default('desc'),
+  status: z.enum(['pending', 'contacted', 'completed', 'cancelled']).optional(),
+  page:   z.coerce.number().int().min(1).default(1),
+  limit:  z.coerce.number().int().min(1).max(50).default(20),
 });
 
 module.exports = {

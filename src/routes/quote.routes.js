@@ -14,44 +14,22 @@ const {
 // All quote routes require authentication
 router.use(protect);
 
-// ── List & Create ───────────────────────────────────────────────
+// GET  /api/quotes/summary  — count by status (before /:id)
+router.get('/summary', quoteController.getQuoteSummary);
 
-// GET  /api/quotes              — list my quotes (with filters/pagination)
-router.get('/',
-  validateQuery(listQuotesSchema),
-  quoteController.getMyQuotes
-);
+// GET  /api/quotes          — list my quote requests
+router.get('/',   validateQuery(listQuotesSchema), quoteController.getMyQuotes);
 
-// GET  /api/quotes/stats        — quote stats for dashboard
-router.get('/stats', quoteController.getQuoteStats);
+// POST /api/quotes          — submit a quote request
+router.post('/',  validate(createQuoteSchema),     quoteController.createQuote);
 
-// POST /api/quotes              — create a new quote
-router.post('/',
-  validate(createQuoteSchema),
-  quoteController.createQuote
-);
+// GET    /api/quotes/:id    — single quote request
+router.get('/:id',    quoteController.getQuote);
 
-// ── Single quote operations ─────────────────────────────────────
-// MUST register /stats before /:id or it'll be caught as an ID
+// PATCH  /api/quotes/:id    — update message / contact / cancel
+router.patch('/:id',  validate(updateQuoteSchema),  quoteController.updateQuote);
 
-// GET  /api/quotes/:id          — get a single quote
-router.get('/:id', quoteController.getQuote);
-
-// PATCH /api/quotes/:id         — update notes, status, client info
-router.patch('/:id',
-  validate(updateQuoteSchema),
-  quoteController.updateQuote
-);
-
-// DELETE /api/quotes/:id        — delete quote + Cloudinary PDF
+// DELETE /api/quotes/:id    — delete pending request
 router.delete('/:id', quoteController.deleteQuote);
-
-// ── PDF endpoints ──────────────────────────────────────────────
-
-// POST /api/quotes/:id/pdf      — generate PDF + upload to Cloudinary
-router.post('/:id/pdf', quoteController.generatePdf);
-
-// GET  /api/quotes/:id/pdf      — download/view the PDF
-router.get('/:id/pdf', quoteController.downloadPdf);
 
 module.exports = router;
