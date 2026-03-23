@@ -11,20 +11,25 @@
     "sync": "node -e \"require('./src/jobs/tariff.sync').runSync({source:'all'}).then(r=>console.log(JSON.stringify(r.summary,null,2))).catch(console.error)\""
   },
   "dependencies": {
+    "axios": "^1.13.6",
     "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.4.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.3.1",
     "helmet": "^7.1.0",
+    "ioredis": "^5.3.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.4.0",
     "morgan": "^1.10.0",
-    "zod": "^3.23.8",
+    "multer": "^2.1.1",
     "node-cron": "^3.0.3",
-    "ioredis": "^5.3.2",
+    "pdf-lib": "^1.17.1",
     "pdfkit": "^0.15.0",
-    "cloudinary": "^2.4.0"
+    "sharp": "^0.34.5",
+    "stripe": "^20.4.1",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "jest": "^29.7.0",

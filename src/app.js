@@ -8,6 +8,14 @@ const authRoutes    = require('./routes/auth.routes');
 const profileRoutes = require('./routes/profile.routes');
 const tariffRoutes  = require('./routes/tariff.routes');
 const quoteRoutes   = require('./routes/quote.routes');
+const documentRoutes = require('./routes/document.routes');
+const adminRoutes    = require('./routes/admin.routes');
+const switchRoutes   = require('./routes/switch.routes');
+const webhookRoutes  = require('./routes/webhook.routes');
+const consultationRoutes = require('./routes/consultation.routes');
+
+
+
 const { sendError }  = require('./utils/response');
 
 const app = express();
@@ -43,6 +51,7 @@ const globalLimiter = rateLimit({
 // });
 
 app.use(globalLimiter);
+app.use('/api/webhooks', webhookRoutes);
 
 // ── Body parsing ───────────────────────────────────────────
 app.use(express.json({ limit: '10kb' })); // Prevent large payloads
@@ -68,6 +77,12 @@ app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/tariffs', tariffRoutes);
 app.use('/api/quotes',  quoteRoutes);
+app.use('/api/documents', documentRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/switches', switchRoutes);
+app.use('/api/consultations', consultationRoutes);
+
+
 
 // ── 404 handler ────────────────────────────────────────────
 app.use((req, res) => {

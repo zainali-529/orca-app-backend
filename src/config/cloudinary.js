@@ -1,76 +1,80 @@
 /**
- * Cloudinary Configuration
+ * Cloudinary Config — Fixed
  *
- * Used for storing generated PDF quotes.
+ * Key fix: fl_attachment transformation REMOVED.
+ * Cloudinary free/restricted accounts return:
+ *   {"error":{"message":"Customer is marked as untrusted"}}
+ * when any transformation flag is used on raw files.
  *
- * Setup:
- *   1. Create free account at cloudinary.com
- *   2. Add to .env:
- *        CLOUDINARY_CLOUD_NAME=your_cloud_name
- *        CLOUDINARY_API_KEY=your_api_key
- *        CLOUDINARY_API_SECRET=your_api_secret
- *
- * PDFs are stored in the 'energy-broker/quotes' folder.
- * Cloudinary auto-generates a secure HTTPS URL for each upload.
+ * Solution: use secure_url directly — no transformations.
+ * On mobile, Linking.openURL() handles PDF download correctly without fl_attachment.
  */
 
-let cloudinary = null;
-let isConfigured = false;
+const cloudinaryLib = require('cloudinary').v2;
 
-const init = () => {
-  if (isConfigured) return cloudinary;
+const isConfigured =
+  process.env.CLOUDINARY_CLOUD_NAME &&
+  process.env.CLOUDINARY_API_KEY &&
+  process.env.CLOUDINARY_API_SECRET;
 
-  if (
-    !process.env.CLOUDINARY_CLOUD_NAME ||
-    !process.env.CLOUDINARY_API_KEY    ||
-    !process.env.CLOUDINARY_API_SECRET
-  ) {
-    console.warn('⚠  Cloudinary credentials not set — PDF upload disabled');
-    console.warn('   Add CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET to .env');
-    return null;
-  }
-
-  try {
-    const { v2 } = require('cloudinary');
-    v2.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key:    process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
-      secure:     true,
-    });
-    cloudinary = v2;
-    isConfigured = true;
-    console.log('Cloudinary configured ✓');
-    return cloudinary;
-  } catch (err) {
-    console.warn('Cloudinary init failed:', err.message);
-    return null;
-  }
-};
+if (isConfigured) {
+  cloudinaryLib.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key:    process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure:     true,
+  });
+}
 
 /**
- * Upload a PDF buffer to Cloudinary.
+ * Upload a file buffer to Cloudinary.
  *
- * @param {Buffer} buffer - PDF buffer from PDFKit
- * @param {string} filename - e.g. 'EB-2025-000001'
- * @returns {{ url: string, publicId: string } | null}
+ * @param {Buffer} buffer    - Complete file buffer
+ * @param {string} publicId  - e.g. "LOA-2026-000004"
+ * @param {string} folder    - Cloudinary folder
+ * @returns {Promise<{ url: string, publicId: string } | null>}
  */
-const uploadPdf = async (buffer, filename) => {
-  const cloud = init();
-  if (!cloud) return null;
+const uploadFile = (buffer, publicId, folder = 'energy-broker/documents') => {
+  if (!isConfigured) {
+    console.warn('[Cloudinary] Not configured — skipping upload');
+    return Promise.resolve(null);
+  }
+
+  if (!buffer || buffer.length < 10) {
+    console.error('[Cloudinary] Buffer too small:', buffer?.length);
+    return Promise.resolve(null);
+  }
+
+  // Detect if it's a PDF
+  const header = buffer.slice(0, 5).toString('ascii');
+  const isPdf = header === '%PDF-';
+
+  console.log(`[Cloudinary] Uploading ${publicId} (${buffer.length} bytes, isPdf: ${isPdf})`);
 
   return new Promise((resolve, reject) => {
-    const uploadStream = cloud.uploader.upload_stream(
-      {
-        folder:        'energy-broker/quotes',
-        public_id:     filename,
-        resource_type: 'raw',        // PDFs are 'raw' in Cloudinary
-        format:        'pdf',
-        overwrite:     true,
-        tags:          ['quote', 'pdf'],
-      },
+    const options = {
+      resource_type: isPdf ? 'raw' : 'image', // raw for PDFs, image for others
+      public_id:     publicId,
+      folder:        folder,
+      overwrite:     true,
+      type:          'upload',
+      access_mode:   'public',
+    };
+
+    if (isPdf) options.format = 'pdf';
+
+    const uploadStream = cloudinaryLib.uploader.upload_stream(
+      options,
       (error, result) => {
-        if (error) return reject(error);
+        if (error) {
+          console.error('[Cloudinary] Upload error:', error.message);
+          return reject(error);
+        }
+        if (!result?.secure_url) {
+          return reject(new Error('Cloudinary returned no URL'));
+        }
+
+        console.log(`[Cloudinary] Uploaded: ${result.secure_url}`);
         resolve({
           url:      result.secure_url,
           publicId: result.public_id,
@@ -78,30 +82,35 @@ const uploadPdf = async (buffer, filename) => {
       }
     );
 
-    uploadStream.end(buffer);
+    const { Readable } = require('stream');
+    const readable = new Readable();
+    readable.push(buffer);
+    readable.push(null);
+    readable.pipe(uploadStream);
   });
 };
 
 /**
- * Delete a PDF from Cloudinary by publicId.
- *
- * @param {string} publicId - Cloudinary public_id
+ * Upload a PDF buffer to Cloudinary (Backward compat).
  */
-const deletePdf = async (publicId) => {
-  const cloud = init();
-  if (!cloud || !publicId) return;
+const uploadPdf = (buffer, docNumber) => uploadFile(buffer, docNumber);
 
+/**
+ * Delete a file from Cloudinary.
+ */
+const deleteFile = async (publicId, resourceType = 'raw') => {
+  if (!isConfigured || !publicId) return;
   try {
-    await cloud.uploader.destroy(publicId, { resource_type: 'raw' });
-    console.log(`Cloudinary: deleted ${publicId}`);
-  } catch (err) {
-    console.warn('Cloudinary delete failed:', err.message);
+    await cloudinaryLib.uploader.destroy(publicId, { resource_type: resourceType });
+    console.log(`[Cloudinary] Deleted: ${publicId}`);
+  } catch (e) {
+    console.error('[Cloudinary] Delete error:', e.message);
   }
 };
 
 /**
- * Get Cloudinary instance (for advanced use).
+ * Delete a PDF from Cloudinary (Backward compat).
  */
-const getCloudinary = () => init();
+const deletePdf = async (publicId) => deleteFile(publicId, 'raw');
 
-module.exports = { uploadPdf, deletePdf, getCloudinary, init };
+module.exports = { uploadFile, uploadPdf, deleteFile, deletePdf };
