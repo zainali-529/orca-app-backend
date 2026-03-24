@@ -35,9 +35,18 @@ const recalculateOnboarding = (profile) => {
   const firstIncomplete = stepOrder.findIndex((k) => !s[k]);
   profile.onboarding.currentStep = firstIncomplete === -1 ? 5 : firstIncomplete + 1;
 
-  profile.onboarding.isCompleted = s.review;
-  if (s.review && !profile.onboarding.completedAt) {
-    profile.onboarding.completedAt = new Date();
+  // If they already completed it once, we don't force them back to false
+  // unless they completely wipe required fields. But for UX, let's keep isCompleted true
+  // so they don't get trapped in onboarding.
+  if (!profile.onboarding.completedAt) {
+    profile.onboarding.isCompleted = s.review;
+    if (s.review) {
+      profile.onboarding.completedAt = new Date();
+    }
+  } else {
+    // If it was already completed, we just update the steps but leave isCompleted true
+    // so they aren't trapped in the app layout redirect
+    profile.onboarding.isCompleted = true;
   }
 
   return profile;
