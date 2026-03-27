@@ -12,6 +12,7 @@ const UserProfile = require('../models/UserProfile');
 const Quote       = require('../models/Quote');
 const Document    = require('../models/Document');
 const Switch      = require('../models/Switch');
+const notifyTrigger = require('./notification.trigger.service');  // ← ADD THIS
 
 // ─────────────────────────────────────────────────────────────
 // CLIENT MANAGEMENT
@@ -85,6 +86,11 @@ const updateClient = async (clientId, updates) => {
     { new: true, runValidators: true }
   );
 
+  // When admin deactivates a user:
+  if (user && updates.isActive === false) {
+    notifyTrigger.onAccountDeactivated(user);  // ← ADD THIS
+  }
+
   return user;
 };
 
@@ -145,6 +151,7 @@ const updateQuote = async (quoteId, updates) => {
   if (adminNotes !== undefined) quote.adminNotes = adminNotes;
 
   if (status && status !== quote.status) {
+    notifyTrigger.onQuoteStatusChanged(quote, status);  // ← ADD THIS
     const allowed = {
       pending:   ['contacted', 'cancelled'],
       contacted: ['completed', 'cancelled', 'pending'],

@@ -17,6 +17,9 @@ const startServer = async () => {
   const tariffSync = require('./jobs/tariff.sync');
   tariffSync.startScheduler();
 
+  const notifCron = require('./jobs/notification.cron');  // ← ADD THIS
+  notifCron.startScheduler();                             // ← ADD THIS
+
   // Run initial sync on startup (background — don't block server start)
   if (process.env.NODE_ENV !== 'test') {
     setTimeout(() => {

@@ -9,6 +9,7 @@ const Quote       = require('../models/Quote');
 const Tariff      = require('../models/Tariff');
 const UserProfile = require('../models/UserProfile');
 const User        = require('../models/User');
+const notifyTrigger = require('./notification.trigger.service');  // ← ADD THIS
 
 // ── Build energy snapshot from profile ────────────────────────
 const buildEnergySnapshot = (profile) => {
@@ -140,6 +141,8 @@ const createQuoteRequest = async (clientId, data) => {
     contactDetails:   contact,
     message:          message ?? null,
   });
+
+  notifyTrigger.onQuoteCreated(quote);  // ← ADD THIS
 
   return quote;
 };

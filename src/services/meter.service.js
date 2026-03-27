@@ -12,6 +12,7 @@
 const MeterReading = require('../models/MeterReading');
 const UserProfile  = require('../models/UserProfile');
 const User         = require('../models/User');
+const notifyTrigger = require('./notification.trigger.service');  // ← ADD THIS
 
 // ── Populate helper ───────────────────────────────────────────────
 const populateMeterReading = (query) =>
@@ -176,6 +177,8 @@ const requestReading = async (clientId, data) => {
     clientNotes: clientNotes ?? null,
   });
 
+  notifyTrigger.onMeterReadingRequested(reading);  // ← ADD THIS
+
   return reading;
 };
 
@@ -270,6 +273,9 @@ const adminMarkProcessing = async (adminId, readingId, adminNotes) => {
   if (adminNotes !== undefined) reading.adminNotes = adminNotes;
 
   await reading.save();
+
+  notifyTrigger.onMeterReadingProcessing(reading);  // ← ADD THIS
+
   return reading;
 };
 
@@ -414,6 +420,9 @@ const adminFulfillReading = async (adminId, readingId, data) => {
   }
 
   await reading.save();
+
+  notifyTrigger.onMeterReadingFulfilled(reading);  // ← ADD THIS
+
   return reading;
 };
 
@@ -436,6 +445,9 @@ const adminFailReading = async (adminId, readingId, reason) => {
   reading.assignedAdmin = adminId;
 
   await reading.save();
+
+  notifyTrigger.onMeterReadingFailed(reading);  // ← ADD THIS
+
   return reading;
 };
 

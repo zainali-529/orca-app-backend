@@ -15,6 +15,7 @@ const webhookRoutes      = require('./routes/webhook.routes');
 const consultationRoutes = require('./routes/consultation.routes');
 const meterRoutes        = require('./routes/meter.routes');
 const dashboardRoutes    = require('./routes/dashboard.routes');   // ← NEW
+const notificationRoutes = require('./routes/notification.routes');  // ← ADD THIS
 
 const { sendError } = require('./utils/response');
 
@@ -74,6 +75,7 @@ app.use('/api/switches',       switchRoutes);
 app.use('/api/consultations',  consultationRoutes);
 app.use('/api/meter-readings', meterRoutes);
 app.use('/api/dashboard',      dashboardRoutes);   // ← NEW
+app.use('/api/notifications', notificationRoutes);                   // ← ADD THIS
 
 // ── 404 handler ────────────────────────────────────────────────
 app.use((req, res) => {

@@ -12,6 +12,7 @@
 const Switch      = require('../models/Switch');
 const Quote       = require('../models/Quote');
 const Document    = require('../models/Document');
+const notifyTrigger = require('./notification.trigger.service');  // ← ADD THIS
 
 // ── Status transition rules ────────────────────────────────────────
 // Defines which transitions are valid from each status
@@ -170,6 +171,9 @@ const requestSwitch = async (clientId, data) => {
   });
 
   await sw.save();
+
+  notifyTrigger.onSwitchInitiated(sw);  // ← ADD THIS
+
   return sw;
 };
 
@@ -378,6 +382,9 @@ const adminUpdateStatus = async (adminId, switchId, newStatus, opts = {}) => {
   });
 
   await sw.save();
+
+  notifyTrigger.onSwitchStatusChanged(sw, newStatus);  // ← ADD THIS
+
   return sw;
 };
 

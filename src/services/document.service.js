@@ -12,6 +12,7 @@ const UserProfile = require('../models/UserProfile');
 const User        = require('../models/User');
 const { generateLoaPdf } = require('./loa.pdf.service');
 const { appendSignatureToPdf } = require('./document.sign.service');
+const notifyTrigger = require('./notification.trigger.service');  // ← ADD THIS
 const axios = require('axios');
 
 // Cloudinary used for uploading signed PDFs
@@ -122,6 +123,8 @@ const signLOA = async (clientId, documentId, signatureData, req) => {
 
   await document.save();
 
+  notifyTrigger.onDocumentSigned(document);  // ← ADD THIS
+
   return document;
 };
 
@@ -215,6 +218,8 @@ const adminSendDocument = async (adminId, data) => {
     signerDetails: buildSignerSnapshot(clientUser, clientProfile),
     ...(title ? { title } : {}),
   });
+
+  notifyTrigger.onDocumentSentToClient(doc);  // ← ADD THIS
 
   return doc;
 };

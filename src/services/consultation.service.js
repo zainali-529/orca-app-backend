@@ -5,6 +5,7 @@
 const Consultation  = require('../models/Consultation');
 const User          = require('../models/User');
 const stripeService = require('./stripe.service');
+const notifyTrigger = require('./notification.trigger.service');  // ← ADD THIS
 const { lookupPrice, getAvailableOptions } = require('../config/consultation.pricing');
 
 // ── Populate helper ────────────────────────────────────────────────
@@ -139,6 +140,8 @@ const requestConsultation = async (clientId, data) => {
 
   await consultation.save();
 
+  notifyTrigger.onConsultationBooked(consultation);  // ← ADD THIS
+
   // ── 4. Create Stripe PaymentIntent ───────────────────────────
   const idempotencyKey = `cons_${consultation._id}_v1`;
 
@@ -204,6 +207,9 @@ const cancelConsultation = async (clientId, consultationId, reason) => {
   }
 
   await c.save();
+
+  notifyTrigger.onConsultationCancelled(c, c.cancelledBy);  // ← ADD THIS
+
   return c;
 };
 
@@ -287,6 +293,9 @@ const handleStripeWebhookEvent = async (event) => {
       c.payment.stripeCustomerId = pi.customer ?? null;
 
       await c.save();
+
+      notifyTrigger.onConsultationPaymentConfirmed(c);  // ← ADD THIS
+
       console.log(`[Webhook] Payment confirmed: ${c.consultationNumber} £${c.price}`);
       break;
     }
@@ -300,6 +309,9 @@ const handleStripeWebhookEvent = async (event) => {
       c.payment.status = 'failed';
 
       await c.save();
+
+      notifyTrigger.onConsultationPaymentFailed(c);  // ← ADD THIS
+
       console.log(`[Webhook] Payment failed: ${c.consultationNumber}`);
       break;
     }
@@ -389,6 +401,11 @@ const adminConfirm = async (adminId, consultationId, data = {}) => {
   if (data.brokerNotes)   c.brokerNotes   = data.brokerNotes;
 
   await c.save();
+
+  if (data.scheduledAt) {
+    notifyTrigger.onConsultationScheduled(c);  // ← ADD THIS
+  }
+
   return c;
 };
 
@@ -410,6 +427,9 @@ const adminComplete = async (adminId, consultationId, data = {}) => {
   if (data.relatedDocument) c.relatedDocument = data.relatedDocument;
 
   await c.save();
+
+  notifyTrigger.onConsultationCompleted(c);  // ← ADD THIS
+
   return c;
 };
 
@@ -425,6 +445,9 @@ const adminNoShow = async (adminId, consultationId, brokerNotes) => {
   if (brokerNotes) c.brokerNotes = brokerNotes;
 
   await c.save();
+
+  notifyTrigger.onConsultationNoShow(c);  // ← ADD THIS
+
   return c;
 };
 
@@ -449,6 +472,9 @@ const adminRefund = async (adminId, consultationId, opts = {}) => {
   if (refund.amount >= c.pricePence) c.status = 'refunded';
 
   await c.save();
+
+  notifyTrigger.onConsultationRefunded(c);  // ← ADD THIS
+
   return { consultation: c, refund };
 };
 

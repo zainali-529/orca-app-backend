@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const RefreshToken = require('../models/RefreshToken');
+const notifyTrigger = require('./notification.trigger.service');  // ← ADD THIS
 const {
   generateAccessToken,
   generateRefreshToken,
@@ -21,6 +22,7 @@ const registerUser = async ({ firstName, lastName, email, phone, password }) => 
 
   // Create user (password hashed in model pre-save hook)
   const user = await User.create({ firstName, lastName, email, phone, password });
+  notifyTrigger.onUserRegistered(user);  // ← ADD THIS (fire & forget)
   return user;
 };
 

@@ -7,6 +7,7 @@ const switchController       = require('../controllers/switch.controller');
 const dashboardController    = require('../controllers/dashboard.controller');   // ← NEW
 const consultationController = require('../controllers/consultation.controller');
 const meterController        = require('../controllers/meter.controller');
+const notificationController = require('../controllers/notification.controller');
 const { protect }            = require('../middleware/auth');
 const { isAdmin }            = require('../middleware/admin');
 const validate               = require('../middleware/validate');
@@ -94,6 +95,7 @@ router.post('/switches/:id/timeline',
 );
 
 // ── Consultations ──────────────────────────────────────────────────
+router.get('/notifications/stats', notificationController.adminGetStats);
 router.get('/consultations/stats', consultationController.adminGetStats);
 router.get('/consultations',
   validateQuery(adminListConsultationsSchema),
