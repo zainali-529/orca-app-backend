@@ -217,13 +217,28 @@ const retryPayment = async (clientId, consultationId) => {
   const c = await Consultation.findOne({
     _id:    consultationId,
     client: clientId,
-    status: 'payment_failed',
+    status: { $in: ['awaiting_payment', 'payment_failed'] },
   }).select('+payment.stripeClientSecret +payment.idempotencyKey');
 
   if (!c) {
     const e = new Error('Consultation not found or not eligible for retry');
     e.statusCode = 404; throw e;
   }
+
+  const canReuseExistingSession =
+    c.status === 'awaiting_payment' &&
+    !!c.payment?.stripePaymentIntentId &&
+    !!c.payment?.stripeClientSecret &&
+    c.payment?.status !== 'succeeded';
+
+  if (canReuseExistingSession) {
+    return {
+      consultation:  c.toJSON(),
+      clientSecret:  c.payment.stripeClientSecret,
+      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+    };
+  }
+
   if (c.paymentAttempts >= 3) {
     const e = new Error('Maximum payment attempts (3) reached. Please contact support.');
     e.statusCode = 400; throw e;

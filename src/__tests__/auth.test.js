@@ -6,9 +6,18 @@ const app = require('../app');
 const User = require('../models/User');
 const RefreshToken = require('../models/RefreshToken');
 
-// Use a separate test DB
-const TEST_MONGO_URI =
-  process.env.MONGO_TEST_URI || process.env.MONGO_URI?.replace('energy-broker', 'energy-broker-test');
+const TEST_MONGO_URI = process.env.MONGO_TEST_URI;
+const APP_MONGO_URI = process.env.MONGO_URI;
+
+if (!TEST_MONGO_URI) {
+  throw new Error('MONGO_TEST_URI is required for tests. Refusing to run against app database.');
+}
+if (APP_MONGO_URI && TEST_MONGO_URI === APP_MONGO_URI) {
+  throw new Error('MONGO_TEST_URI must be different from MONGO_URI.');
+}
+if (!/test/i.test(TEST_MONGO_URI)) {
+  throw new Error('MONGO_TEST_URI must point to a dedicated test database (name should include "test").');
+}
 
 beforeAll(async () => {
   await mongoose.connect(TEST_MONGO_URI);
